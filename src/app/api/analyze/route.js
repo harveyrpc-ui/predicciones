@@ -91,7 +91,7 @@ export async function POST(request) {
   }
 
 const res = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent`,
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`,
   {
     method: "POST",
     headers: { 
