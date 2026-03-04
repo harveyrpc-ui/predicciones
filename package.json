@@ -1,5 +1,5 @@
 {
-  "name": "match_predictor",
+  "name": "predicciones",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -8,7 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
- "next": "16.0.6",
+    "next": "15.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   }
