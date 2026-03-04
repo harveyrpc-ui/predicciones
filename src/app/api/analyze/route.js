@@ -1,16 +1,36 @@
 export const maxDuration = 60;
 
-const PROMPT_TEMPLATE = (home, away) => `
-Eres un analista deportivo experto en pronósticos de fútbol.
-Analiza el partido ${home} vs ${away} con toda tu información disponible.
-Devuelve ÚNICAMENTE un objeto JSON válido (sin texto extra, sin markdown):
+async function searchWeb(query, tavilyKey) {
+  const res = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: tavilyKey,
+      query,
+      search_depth: "basic",
+      max_results: 5,
+      include_answer: true
+    })
+  });
+  const data = await res.json();
+  return data.results?.map(r => `${r.title}: ${r.content}`).join("\n\n") || "";
+}
+
+const PROMPT_TEMPLATE = (home, away, searchData) => `
+Eres un analista deportivo experto. Basándote en esta información REAL y ACTUAL encontrada en internet, analiza el partido ${home} vs ${away}.
+
+DATOS REALES ENCONTRADOS:
+${searchData}
+
+Usa esos datos para generar probabilidades y análisis precisos.
+Devuelve ÚNICAMENTE un objeto JSON válido (sin texto extra, sin markdown, sin backticks):
 
 {
   "matchup": {
     "home": "${home}",
     "away": "${away}",
-    "league": "Liga o competición",
-    "date": "Fecha estimada del próximo partido"
+    "league": "Liga o competición real",
+    "date": "Fecha real del próximo partido"
   },
   "homeTeam": {
     "form": ["W","D","L","W","W"],
@@ -24,7 +44,7 @@ Devuelve ÚNICAMENTE un objeto JSON válido (sin texto extra, sin markdown):
     "suspensions": [],
     "keyPlayers": ["Jugador 1", "Jugador 2"],
     "nextImportantMatch": "Próximo partido relevante",
-    "recentNews": "Contexto importante reciente"
+    "recentNews": "Noticia real reciente del equipo"
   },
   "awayTeam": {
     "form": ["L","W","W","D","L"],
@@ -38,7 +58,7 @@ Devuelve ÚNICAMENTE un objeto JSON válido (sin texto extra, sin markdown):
     "suspensions": ["Jugador"],
     "keyPlayers": ["Jugador A"],
     "nextImportantMatch": "Próximo partido relevante",
-    "recentNews": "Contexto importante reciente"
+    "recentNews": "Noticia real reciente del equipo"
   },
   "headToHead": {
     "matches": 8,
@@ -74,14 +94,16 @@ Devuelve ÚNICAMENTE un objeto JSON válido (sin texto extra, sin markdown):
     "bestBet": "Mercado recomendado",
     "keyFactors": ["Factor 1", "Factor 2", "Factor 3"],
     "riskLevel": "Medio",
-    "summary": "Análisis de 2-3 oraciones sobre el partido."
+    "summary": "Análisis de 2-3 oraciones basado en datos reales."
   }
 }`;
 
 export async function POST(request) {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: "GROQ_API_KEY not configured" }, { status: 500 });
+  const groqKey = process.env.GROQ_API_KEY;
+  const tavilyKey = process.env.TAVILY_API_KEY;
+
+  if (!groqKey || !tavilyKey) {
+    return Response.json({ error: "API keys not configured" }, { status: 500 });
   }
 
   const { home, away } = await request.json();
@@ -89,11 +111,21 @@ export async function POST(request) {
     return Response.json({ error: "Missing teams" }, { status: 400 });
   }
 
+  // Búsquedas en paralelo para datos actuales
+  const [news, injuries, stats, h2h] = await Promise.all([
+    searchWeb(`${home} vs ${away} próximo partido 2025 fecha`, tavilyKey),
+    searchWeb(`${home} lesionados suspendidos 2025 ${away}`, tavilyKey),
+    searchWeb(`${home} ${away} estadísticas forma reciente goles 2025`, tavilyKey),
+    searchWeb(`${home} vs ${away} historial head to head resultados`, tavilyKey),
+  ]);
+
+  const searchData = `=== PARTIDO Y FECHA ===\n${news}\n\n=== LESIONADOS Y SUSPENDIDOS ===\n${injuries}\n\n=== ESTADÍSTICAS Y FORMA ===\n${stats}\n\n=== HISTORIAL H2H ===\n${h2h}`;
+
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
+      "Authorization": `Bearer ${groqKey}`
     },
     body: JSON.stringify({
       model: "llama-3.3-70b-versatile",
@@ -106,7 +138,7 @@ export async function POST(request) {
         },
         {
           role: "user",
-          content: PROMPT_TEMPLATE(home, away)
+          content: PROMPT_TEMPLATE(home, away, searchData)
         }
       ]
     })
