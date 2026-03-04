@@ -1,17 +1,16 @@
 export const maxDuration = 60;
 
 const PROMPT_TEMPLATE = (home, away) => `
-Eres un analista deportivo experto. Busca con Google información REAL y ACTUAL sobre el partido ${home} vs ${away}.
-Investiga: forma reciente de ambos equipos, lesionados, suspendidos, estadísticas de goles/córners/tarjetas, historial H2H y noticias recientes.
-
-Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta (sin texto extra, sin markdown, sin backticks):
+Eres un analista deportivo experto en pronósticos de fútbol.
+Analiza el partido ${home} vs ${away} con toda tu información disponible.
+Devuelve ÚNICAMENTE un objeto JSON válido (sin texto extra, sin markdown):
 
 {
   "matchup": {
     "home": "${home}",
     "away": "${away}",
-    "league": "Liga o competición detectada",
-    "date": "Fecha del próximo partido o estimada"
+    "league": "Liga o competición",
+    "date": "Fecha estimada del próximo partido"
   },
   "homeTeam": {
     "form": ["W","D","L","W","W"],
@@ -21,11 +20,11 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta (sin text
     "avgYellowCards": 1.8,
     "avgRedCards": 0.1,
     "possession": 55,
-    "injuries": ["Nombre (zona lesionada)"],
+    "injuries": ["Jugador (zona)"],
     "suspensions": [],
     "keyPlayers": ["Jugador 1", "Jugador 2"],
-    "nextImportantMatch": "Descripción del próximo partido relevante",
-    "recentNews": "Noticia o contexto importante reciente"
+    "nextImportantMatch": "Próximo partido relevante",
+    "recentNews": "Contexto importante reciente"
   },
   "awayTeam": {
     "form": ["L","W","W","D","L"],
@@ -36,10 +35,10 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta (sin text
     "avgRedCards": 0.15,
     "possession": 45,
     "injuries": [],
-    "suspensions": ["Nombre"],
+    "suspensions": ["Jugador"],
     "keyPlayers": ["Jugador A"],
-    "nextImportantMatch": "Descripción del próximo partido relevante",
-    "recentNews": "Noticia o contexto importante reciente"
+    "nextImportantMatch": "Próximo partido relevante",
+    "recentNews": "Contexto importante reciente"
   },
   "headToHead": {
     "matches": 8,
@@ -75,14 +74,14 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta (sin text
     "bestBet": "Mercado recomendado",
     "keyFactors": ["Factor 1", "Factor 2", "Factor 3"],
     "riskLevel": "Medio",
-    "summary": "Análisis narrativo de 2-3 oraciones sobre el partido."
+    "summary": "Análisis de 2-3 oraciones sobre el partido."
   }
 }`;
 
 export async function POST(request) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
+    return Response.json({ error: "GROQ_API_KEY not configured" }, { status: 500 });
   }
 
   const { home, away } = await request.json();
@@ -90,24 +89,28 @@ export async function POST(request) {
     return Response.json({ error: "Missing teams" }, { status: 400 });
   }
 
-const res = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`,
-  {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
-      "X-goog-api-key": apiKey
+      "Authorization": `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: PROMPT_TEMPLATE(home, away) }] }],
-      tools: [{ googleSearch: {} }],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 4000,
-      }
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.3,
+      max_tokens: 4000,
+      messages: [
+        {
+          role: "system",
+          content: "Eres un analista deportivo experto. Siempre respondes SOLO con JSON válido, sin texto extra ni markdown."
+        },
+        {
+          role: "user",
+          content: PROMPT_TEMPLATE(home, away)
+        }
+      ]
     })
-  }
-);
+  });
 
   if (!res.ok) {
     const err = await res.text();
@@ -115,17 +118,13 @@ const res = await fetch(
   }
 
   const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts
-    ?.filter(p => p.text)
-    ?.map(p => p.text)
-    ?.join("") || "";
-
+  const rawText = data.choices?.[0]?.message?.content || "";
   const clean = rawText.replace(/```json|```/g, "").trim();
   const start = clean.indexOf("{");
   const end = clean.lastIndexOf("}");
 
   if (start === -1 || end === -1) {
-    return Response.json({ error: "No JSON found in response" }, { status: 500 });
+    return Response.json({ error: "No JSON found" }, { status: 500 });
   }
 
   try {
