@@ -90,23 +90,24 @@ export async function POST(request) {
     return Response.json({ error: "Missing teams" }, { status: 400 });
   }
 
-  const res = await fetch(
-
-    
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: PROMPT_TEMPLATE(home, away) }] }],
-        tools: [{ googleSearch: {} }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 4000,
-        }
-      })
-    }
-  );
+const res = await fetch(
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent`,
+  {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      "X-goog-api-key": apiKey
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: PROMPT_TEMPLATE(home, away) }] }],
+      tools: [{ googleSearch: {} }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 4000,
+      }
+    })
+  }
+);
 
   if (!res.ok) {
     const err = await res.text();
